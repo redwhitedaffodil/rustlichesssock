@@ -80,6 +80,12 @@ pub struct App {
     pub end_screen_dismissed: bool,
     /// Whether sound effects are enabled
     pub sound_enabled: bool,
+    /// Lichess session for authentication
+    pub lichess_session: Option<crate::lichess_auth::LichessSession>,
+    /// WebSocket connection for real-time Lichess games
+    pub lichess_ws: Option<std::sync::Arc<std::sync::Mutex<crate::lichess_ws::LichessWebSocket>>>,
+    /// Auto-move controller
+    pub auto_move_controller: Option<crate::auto_move::AutoMoveController>,
 }
 
 impl Default for App {
@@ -111,6 +117,9 @@ impl Default for App {
             lichess_user_profile: None,
             end_screen_dismissed: false,
             sound_enabled: true,
+            lichess_session: None,
+            lichess_ws: None,
+            auto_move_controller: None,
         }
     }
 }
@@ -967,6 +976,32 @@ impl App {
                 }
             }
         }
+
+        // Process WebSocket messages if connected
+        if let Some(ws_arc) = &self.lichess_ws {
+            let messages = if let Ok(ws) = ws_arc.lock() {
+                ws.process_messages().ok()
+            } else {
+                None
+            };
+
+            if let Some(messages) = messages {
+                for msg in messages {
+                    if msg.starts_with("MOVE:") {
+                        let uci = &msg[5..];
+                        // Set WebSocket move highlight
+                        self.game.logic.game_board.set_websocket_last_move(uci);
+                        log::info!("WebSocket move received: {}", uci);
+                    } else if msg == "GAME_END" {
+                        log::info!("Game ended via WebSocket");
+                        self.check_game_end_status();
+                    } else if msg.starts_with("FEN:") {
+                        let fen = &msg[4..];
+                        log::debug!("Position sync: {}", fen);
+                    }
+                }
+            }
+        }
     }
 
     /// Start bot thinking in a separate thread
@@ -1342,6 +1377,50 @@ impl App {
             "Disconnected from Lichess successfully!\n\n Your token has been removed.\n\n You can reconnect anytime from the Lichess menu.".to_string()
         );
         self.current_popup = Some(Popups::Success);
+    }
+
+    /// Start a Lichess game using WebSocket connection
+    pub fn start_lichess_websocket_game(&mut self, game_id: &str, player_color: shakmaty::Color) -> Result<(), String> {
+        use std::sync::{Arc, Mutex};
+        use std::sync::mpsc::channel;
+        
+        // Generate Socket Request ID
+        let sri = crate::lichess_ws::LichessWebSocket::generate_sri();
+        log::info!("Generated SRI: {}", sri);
+        
+        // Create WebSocket connection
+        let ws = crate::lichess_ws::LichessWebSocket::new(game_id, &sri)
+            .map_err(|e| format!("Failed to connect WebSocket: {}", e))?;
+        
+        // Store in app
+        self.lichess_ws = Some(Arc::new(Mutex::new(ws)));
+        
+        // Create channel for opponent moves
+        let (_move_tx, move_rx) = channel();
+        
+        // Create LichessWs opponent
+        let opponent = crate::game_logic::opponent::Opponent {
+            kind: Some(crate::game_logic::opponent::OpponentKind::LichessWs {
+                game_id: game_id.to_string(),
+                ws_handle: self.lichess_ws.as_ref().unwrap().clone(),
+                move_rx,
+            }),
+            opponent_will_move: player_color == shakmaty::Color::White,
+            color: player_color.other(),
+            game_started: true,
+            initial_move_count: 0,
+            moves_received: 0,
+        };
+        
+        self.game.logic.opponent = Some(opponent);
+        self.selected_color = Some(player_color);
+        
+        // Initialize auto-move controller (disabled by default)
+        let auto_move = crate::auto_move::AutoMoveController::new();
+        self.auto_move_controller = Some(auto_move);
+        
+        log::info!("Started Lichess WebSocket game: {} as {:?}", game_id, player_color);
+        Ok(())
     }
 
     pub fn reset(&mut self) {
