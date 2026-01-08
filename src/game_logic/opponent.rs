@@ -16,6 +16,11 @@ pub enum OpponentKind {
         move_tx: Sender<String>,
         player_move_tx: Option<Sender<()>>,
     },
+    LichessWs {
+        game_id: String,
+        ws_handle: std::sync::Arc<std::sync::Mutex<crate::lichess_ws::LichessWebSocket>>,
+        move_rx: Receiver<String>,
+    },
 }
 
 pub struct Opponent {
@@ -54,6 +59,7 @@ impl Clone for Opponent {
         let kind = match &self.kind {
             Some(OpponentKind::Tcp(stream)) => stream.try_clone().ok().map(OpponentKind::Tcp),
             Some(OpponentKind::Lichess { .. }) => None, // Cannot clone channels or senders
+            Some(OpponentKind::LichessWs { .. }) => None, // Cannot clone WS handle or channels
             None => None,
         };
 
@@ -85,9 +91,14 @@ impl Opponent {
         matches!(self.kind, Some(OpponentKind::Tcp(_)))
     }
 
-    /// Check if this opponent is a Lichess connection
+    /// Check if this opponent is a Lichess connection (HTTP polling)
     pub fn is_lichess(&self) -> bool {
         matches!(self.kind, Some(OpponentKind::Lichess { .. }))
+    }
+
+    /// Check if this opponent is a Lichess WebSocket connection
+    pub fn is_lichess_ws(&self) -> bool {
+        matches!(self.kind, Some(OpponentKind::LichessWs { .. }))
     }
 
     pub fn new(addr: String, color: Option<Color>) -> Result<Opponent, String> {
@@ -193,6 +204,9 @@ impl Opponent {
                 // For Lichess, maybe we resign or abort?
                 // For now, do nothing or implement resignation later.
             }
+            Some(OpponentKind::LichessWs { .. }) => {
+                // For Lichess WS, game end is detected from server
+            }
             None => {}
         }
     }
@@ -225,6 +239,13 @@ impl Opponent {
             Some(OpponentKind::Lichess { move_tx, .. }) => {
                 if let Err(e) = move_tx.send(move_str) {
                     eprintln!("Failed to send move to Lichess channel: {}", e);
+                }
+            }
+            Some(OpponentKind::LichessWs { ws_handle, .. }) => {
+                // For WebSocket, use the send_move method with default lag
+                let ws = ws_handle.lock().unwrap();
+                if let Err(e) = ws.send_move(&move_str, 20, false) {
+                    eprintln!("Failed to send move via WebSocket: {}", e);
                 }
             }
             None => {}
@@ -265,6 +286,12 @@ impl Opponent {
                 }
             }
             Some(OpponentKind::Lichess { move_rx, .. }) => {
+                match move_rx.try_recv() {
+                    Ok(m) => Ok(m),
+                    Err(_) => Ok(String::new()), // Empty string means no move yet
+                }
+            }
+            Some(OpponentKind::LichessWs { move_rx, .. }) => {
                 match move_rx.try_recv() {
                     Ok(m) => Ok(m),
                     Err(_) => Ok(String::new()), // Empty string means no move yet
@@ -313,6 +340,7 @@ pub fn wait_for_game_start(opponent: &mut Opponent) -> Result<bool, String> {
             }
         }
         Some(OpponentKind::Lichess { .. }) => Ok(true), // Lichess game starts immediately
+        Some(OpponentKind::LichessWs { .. }) => Ok(true), // Lichess WS game starts immediately
         None => Err("No opponent connected".to_string()),
     }
 }

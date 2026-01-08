@@ -74,6 +74,17 @@ pub struct LichessWebSocket {
     game_id: String,
 }
 
+impl std::fmt::Debug for LichessWebSocket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LichessWebSocket")
+            .field("game_id", &self.game_id)
+            .field("current_ack", &self.current_ack.load(Ordering::Relaxed))
+            .field("game_ended", &self.game_ended.load(Ordering::Relaxed))
+            .field("last_move_acked", &self.last_move_acked.load(Ordering::Relaxed))
+            .finish()
+    }
+}
+
 impl LichessWebSocket {
     /// Create a new WebSocket connection to Lichess
     pub fn new(game_id: &str, sri: &str) -> Result<Self, Box<dyn std::error::Error>> {
