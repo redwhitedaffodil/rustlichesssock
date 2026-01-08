@@ -558,6 +558,11 @@ impl UI {
 
     /// Method to render the board
     fn get_last_move_squares(&self, logic: &GameLogic) -> (Option<Square>, Option<Square>) {
+        // Prioritize WebSocket move highlights
+        if let Some((from, to)) = logic.game_board.last_ws_move {
+            return (Some(from), Some(to));
+        }
+        
         if logic.game_board.move_history.is_empty() {
             return (None, None);
         }
@@ -570,7 +575,7 @@ impl UI {
         // In multiplayer modes, always show the last move regardless of who made it
         if let Some(opponent) = logic.opponent.as_ref() {
             // Check if this is multiplayer (TCP or Lichess)
-            let is_multiplayer = opponent.is_tcp_multiplayer() || opponent.is_lichess();
+            let is_multiplayer = opponent.is_tcp_multiplayer() || opponent.is_lichess() || opponent.is_lichess_ws();
 
             if is_multiplayer {
                 // In multiplayer mode (TCP or Lichess), always show the last move

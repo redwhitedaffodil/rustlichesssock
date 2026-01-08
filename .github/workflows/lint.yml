@@ -4,7 +4,6 @@ on:
   pull_request:
   workflow_call:
 
-
 env:
   CARGO_TERM_COLOR: always
 
@@ -18,6 +17,8 @@ jobs:
 
     - uses: dtolnay/rust-toolchain@stable
       name: Install the Rust toolchain
+      with:
+        toolchain: stable
 
     - name: Install ALSA development libraries
       run: sudo apt-get update && sudo apt-get install -y libasound2-dev

@@ -36,5 +36,14 @@ pub mod skin;
 // Lichess
 pub mod lichess;
 
+// Lichess WebSocket
+pub mod lichess_ws;
+
+// Lichess Authentication
+pub mod lichess_auth;
+
+// Auto-Move Controller
+pub mod auto_move;
+
 // Sound effects
 pub mod sound;
