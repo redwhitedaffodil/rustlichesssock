@@ -87,7 +87,7 @@ fn main() -> AppResult<()> {
 
     // Handle Lichess login request first
     if args.lichess_login {
-        return open_lichess_login().map_err(|e| e.into());
+        return open_lichess_login();
     }
 
     // Used to enable mouse capture (only after we know we're running the TUI)
