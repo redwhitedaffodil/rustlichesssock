@@ -33,11 +33,62 @@ struct Args {
     /// Disable sound effects
     #[arg(long)]
     no_sound: bool,
+    /// Open browser for Lichess login (session-based auth)
+    #[arg(long)]
+    lichess_login: bool,
+}
+
+/// Open browser for Lichess login
+fn open_lichess_login() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔐 Opening Lichess login in your browser...");
+    println!();
+    
+    let login_url = "https://lichess.org/login";
+    
+    // Open browser (cross-platform)
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(login_url)
+            .spawn()?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(login_url)
+            .spawn()?;
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(&["/C", "start", login_url])
+            .spawn()?;
+    }
+    
+    println!("📝 After logging in to Lichess:");
+    println!("   1. Open Developer Tools (F12)");
+    println!("   2. Go to Application/Storage > Cookies");
+    println!("   3. Copy the 'lila2' cookie value");
+    println!();
+    println!("⚠️  Note: Full session-based auth is not yet implemented.");
+    println!("   For now, please use: chess-tui -l YOUR_API_TOKEN");
+    println!();
+    println!("   Get your API token at: https://lichess.org/account/oauth/token");
+    println!("   (Enable 'board:play' scope)");
+    
+    Ok(())
 }
 
 fn main() -> AppResult<()> {
     // Parse the cli arguments first (this will handle --version and exit early if needed)
     let args = Args::parse();
+
+    // Handle Lichess login request first
+    if args.lichess_login {
+        return open_lichess_login().map_err(|e| e.into());
+    }
 
     // Used to enable mouse capture (only after we know we're running the TUI)
     ratatui::crossterm::execute!(
@@ -190,6 +241,18 @@ fn main() -> AppResult<()> {
     // Setup logging
     if let Err(e) = logging::setup_logging(&folder_path, &app.log_level) {
         eprintln!("Failed to initialize logging: {}", e);
+    }
+
+    // Try to load existing Lichess session
+    match chess_tui::lichess_auth::LichessSession::load_or_create() {
+        Ok(session) => {
+            log::info!("Loaded Lichess session for: {:?}", session.username);
+            app.lichess_session = Some(session);
+        }
+        Err(e) => {
+            log::debug!("No Lichess session found: {}", e);
+            // Not an error - user can still use token-based auth
+        }
     }
 
     // Initialize the terminal user interface.
@@ -410,6 +473,7 @@ mod tests {
             depth: 10,
             lichess_token: None,
             no_sound: false,
+            lichess_login: false,
         };
 
         let config_dir = config_dir().unwrap();
