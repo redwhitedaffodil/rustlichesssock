@@ -33,6 +33,10 @@ pub struct GameBoard {
     pub history_position_index: Option<usize>,
     /// Original flip state before navigating history (used to restore when returning to latest)
     pub original_flip_state: Option<bool>,
+    /// WebSocket move highlight (from, to)
+    pub last_ws_move: Option<(Square, Square)>,
+    /// Timestamp of last WebSocket move
+    pub last_ws_move_time: Option<std::time::Instant>,
 }
 
 impl Default for GameBoard {
@@ -45,6 +49,8 @@ impl Default for GameBoard {
             is_flipped: false,
             history_position_index: None,
             original_flip_state: None,
+            last_ws_move: None,
+            last_ws_move_time: None,
         }
     }
 }
@@ -88,6 +94,31 @@ impl GameBoard {
         self.is_flipped = false;
         self.history_position_index = None;
         self.original_flip_state = None;
+        self.last_ws_move = None;
+        self.last_ws_move_time = None;
+    }
+
+    /// Set WebSocket last move highlight from UCI string (e.g., "e2e4")
+    pub fn set_websocket_last_move(&mut self, uci: &str) {
+        if uci.len() < 4 {
+            log::warn!("Invalid UCI string for WebSocket move: {}", uci);
+            return;
+        }
+        
+        // Parse from and to squares from UCI
+        let from_str = &uci[0..2];
+        let to_str = &uci[2..4];
+        
+        if let (Ok(from), Ok(to)) = (
+            Square::from_ascii(from_str.as_bytes()),
+            Square::from_ascii(to_str.as_bytes()),
+        ) {
+            self.last_ws_move = Some((from, to));
+            self.last_ws_move_time = Some(std::time::Instant::now());
+            log::info!("Set WebSocket last move highlight: {} -> {}", from, to);
+        } else {
+            log::warn!("Failed to parse UCI squares: {}", uci);
+        }
     }
 
     /// Gets a read-only reference to the last position in the history.

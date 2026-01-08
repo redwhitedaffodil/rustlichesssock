@@ -558,6 +558,11 @@ impl UI {
 
     /// Method to render the board
     fn get_last_move_squares(&self, logic: &GameLogic) -> (Option<Square>, Option<Square>) {
+        // Prioritize WebSocket move highlights
+        if let Some((from, to)) = logic.game_board.last_ws_move {
+            return (Some(from), Some(to));
+        }
+        
         if logic.game_board.move_history.is_empty() {
             return (None, None);
         }
